@@ -34,12 +34,18 @@ def resolve_config_from_secrets(default: "LLMConfig") -> "LLMConfig":
 
     Falls back to `default` untouched when secrets aren't configured (e.g.
     running locally with no .streamlit/secrets.toml).
+
+    Accepts a few common key-name variants so a small naming mismatch in the
+    Secrets panel doesn't silently fall back to the (unreachable, on a
+    hosted server) local Ollama default.
     """
     try:
         import streamlit as st
-        base_url = st.secrets.get("LLM_BASE_URL")
-        api_key = st.secrets.get("LLM_API_KEY") or st.secrets.get("OPENAI_API_KEY")
-        model = st.secrets.get("LLM_MODEL")
+        base_url = (st.secrets.get("LLM_BASE_URL") or st.secrets.get("GROQ_BASE_URL")
+                    or st.secrets.get("OPENAI_BASE_URL"))
+        api_key = (st.secrets.get("LLM_API_KEY") or st.secrets.get("GROQ_API_KEY")
+                   or st.secrets.get("OPENAI_API_KEY") or st.secrets.get("API_KEY"))
+        model = st.secrets.get("LLM_MODEL") or st.secrets.get("GROQ_MODEL")
         if api_key:
             return LLMConfig(
                 base_url=base_url or "https://api.openai.com/v1",
@@ -50,6 +56,15 @@ def resolve_config_from_secrets(default: "LLMConfig") -> "LLMConfig":
     except Exception:
         pass
     return default
+
+
+def is_unreachable_local_config(config: "LLMConfig") -> bool:
+    """True if this config points at a localhost/loopback address -- which
+    can never be reached from a hosted server (Streamlit Community Cloud,
+    etc). Used to surface a clear error instead of a raw APIConnectionError.
+    """
+    host = config.base_url.lower()
+    return ("localhost" in host) or ("127.0.0.1" in host) or ("0.0.0.0" in host)
 
 
 class LLMClient:

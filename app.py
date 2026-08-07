@@ -22,7 +22,7 @@ Run:
 import streamlit as st
 
 from resume_parser import extract_text
-from llm_client import LLMClient, LLMConfig, resolve_config_from_secrets
+from llm_client import LLMClient, LLMConfig, resolve_config_from_secrets, is_unreachable_local_config
 from matcher import analyze_match, tailor_resume
 from resume_extractor import extract_resume_structure
 from resume_builder import merge_tailored_resume
@@ -60,6 +60,25 @@ else:
     with st.sidebar.expander("ℹ️ Local model examples"):
         st.code("Ollama:     http://localhost:11434/v1  (api_key: 'ollama')\n"
                 "LM Studio:  http://localhost:1234/v1", language="text")
+
+# Guard against the #1 hosted-deploy failure mode: Secrets not set (or the
+# key names don't match), so the config silently fell back to the local
+# Ollama default -- which no hosted server can ever reach. Surface a clear,
+# actionable error up front instead of a raw APIConnectionError deep in an
+# LLM call.
+_config_unreachable = is_unreachable_local_config(LLMConfig(base_url=base_url, api_key=api_key, model=model))
+if _config_unreachable and not _using_hosted_secret:
+    st.error(
+        "⚠️ **LLM endpoint is set to a local address (`" + base_url + "`).** "
+        "If this app is deployed on Streamlit Community Cloud, that address is "
+        "never reachable from the server — go to **Settings → Secrets** on "
+        "share.streamlit.io and add:\n\n"
+        "```toml\nLLM_API_KEY = \"your_groq_or_openai_key\"\n"
+        "LLM_BASE_URL = \"https://api.groq.com/openai/v1\"\n"
+        "LLM_MODEL = \"llama-3.3-70b-versatile\"\n```\n\n"
+        "Then reboot the app. (If you're running this locally with Ollama, "
+        "this warning is expected and safe to ignore.)"
+    )
 
 if not libreoffice_available():
     st.sidebar.warning(
