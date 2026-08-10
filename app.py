@@ -109,6 +109,38 @@ def _make_client() -> LLMClient:
     return LLMClient(LLMConfig(base_url=base_url, api_key=api_key, model=model))
 
 
+def _show_llm_error(e: Exception) -> None:
+    """Show a clear, actionable message for the two most common hosted-deploy
+    failure modes (bad key / unreachable endpoint) instead of a raw traceback.
+    """
+    try:
+        from openai import AuthenticationError, APIConnectionError
+    except Exception:
+        AuthenticationError = APIConnectionError = ()  # type: ignore
+
+    if isinstance(e, AuthenticationError):
+        st.error(
+            "🔑 **The LLM provider rejected the API key** (401 Invalid API Key).\n\n"
+            "Go to **Settings → Secrets** on share.streamlit.io and double-check:\n"
+            "- The key was copied in full, with no extra spaces or duplicated quotes\n"
+            "- It's still active on the provider's dashboard (e.g. console.groq.com/keys) "
+            "— generate a fresh one if unsure\n"
+            "- `LLM_BASE_URL` matches the provider the key belongs to "
+            "(a Groq key will not work against `api.openai.com`, and vice versa)\n\n"
+            "Then click **Reboot app** (Secrets changes need a reboot to take effect)."
+        )
+    elif isinstance(e, APIConnectionError):
+        st.error(
+            "🔌 **Could not reach the LLM endpoint at `" + base_url + "`.**\n\n"
+            "If this app is deployed on Streamlit Community Cloud, a "
+            "`localhost`/local address is never reachable from the server — "
+            "set `LLM_BASE_URL` in **Settings → Secrets** to a real hosted "
+            "endpoint (e.g. `https://api.groq.com/openai/v1`), then reboot."
+        )
+    else:
+        st.exception(e)
+
+
 analyze_clicked = st.button("🔍 Analyze Match", type="primary", use_container_width=False)
 
 if analyze_clicked:
@@ -140,7 +172,7 @@ if analyze_clicked:
         st.session_state["tailored_docx"] = None
         st.session_state["tailored_pdf"] = None
     except Exception as e:
-        st.exception(e)
+        _show_llm_error(e)
 
 # ── Analysis results ─────────────────────────────────────────────────────
 analysis = st.session_state.get("analysis")
@@ -233,7 +265,7 @@ if structured:
             st.session_state["tailored_docx"] = docx_bytes
             st.session_state["tailored_pdf"] = docx_bytes_to_pdf(docx_bytes)
         except Exception as e:
-            st.exception(e)
+            _show_llm_error(e)
 
 final_resume = st.session_state.get("final_resume")
 if final_resume:

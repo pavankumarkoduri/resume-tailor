@@ -82,6 +82,8 @@ class LLMClient:
         the JSON in prose or markdown fences (common with local models that
         don't support strict JSON mode).
         """
+        from openai import AuthenticationError, APIConnectionError
+
         try:
             resp = self._client.chat.completions.create(
                 model=self.config.model,
@@ -93,8 +95,14 @@ class LLMClient:
                 ],
                 response_format={"type": "json_object"},
             )
+        except (AuthenticationError, APIConnectionError):
+            # These will fail identically on retry -- don't mask them by
+            # silently retrying; let the caller (app.py) show a clear message.
+            raise
         except Exception:
-            # Some backends (older Ollama/LM Studio builds) reject response_format.
+            # Some backends (older Ollama/LM Studio builds) reject the
+            # response_format parameter itself (not an auth/connection
+            # issue) -- retry once without it.
             resp = self._client.chat.completions.create(
                 model=self.config.model,
                 temperature=self.config.temperature,
