@@ -50,6 +50,21 @@ def _model_picker(label: str, base_url: str, api_key: str, default_model: str) -
     app never blocks on this call -- it's a convenience, not a hard
     dependency.
     """
+    # When the saved model isn't valid, prefer a well-known, general-purpose
+    # chat model over whatever sorts first alphabetically -- provider model
+    # catalogs mix in specialty/regional/small models (e.g. Groq's
+    # "allam-2-7b", an Arabic-focused 7B model) that technically respond but
+    # are unreliable at strict structured JSON output for tasks like this.
+    _PREFERRED_SUBSTRINGS = ["llama-3.3-70b", "llama-3.1-70b", "llama-3.1-8b",
+                              "mixtral", "gpt-4o", "gemma2-9b"]
+
+    def _pick_best(models: list[str]) -> str:
+        for pref in _PREFERRED_SUBSTRINGS:
+            for m in models:
+                if pref in m.lower():
+                    return m
+        return models[0]
+
     available = list_available_models(base_url, api_key)
     if available:
         if default_model in available:
@@ -58,12 +73,13 @@ def _model_picker(label: str, base_url: str, api_key: str, default_model: str) -
         else:
             # Saved model isn't valid for this key -- show it at the top so
             # the user can see what's configured, but default the actual
-            # selection to a real, working model instead of the broken one.
+            # selection to a real, reliable model instead of the broken one.
+            best = _pick_best(available)
             options = [default_model] + available
-            idx = 1
+            idx = options.index(best)
             st.sidebar.caption(
                 f"⚠️ `{default_model}` isn't in this key's available model list — "
-                "defaulted to a valid one below."
+                f"defaulted to `{best}` below."
             )
         return st.sidebar.selectbox(label, options, index=idx)
     return st.sidebar.text_input(label, value=default_model)

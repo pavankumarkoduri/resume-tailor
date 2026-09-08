@@ -168,6 +168,18 @@ def _coerce_json(text: str) -> dict:
         return json.loads(text)
     except json.JSONDecodeError:
         pass
+    # Some models emit a valid JSON object followed by trailing prose/notes
+    # (raises "Extra data" rather than a parse failure at the start) --
+    # json.JSONDecoder.raw_decode() parses just the first valid JSON value
+    # and tells us where it ended, ignoring anything appended after it.
+    decoder = json.JSONDecoder()
+    start = text.find("{")
+    if start != -1:
+        try:
+            obj, _end = decoder.raw_decode(text[start:])
+            return obj
+        except json.JSONDecodeError:
+            pass
     # Fall back: grab the largest {...} block.
     match = re.search(r"\{.*\}", text, flags=re.DOTALL)
     if match:
