@@ -41,16 +41,39 @@ def resolve_config_from_secrets(default: "LLMConfig") -> "LLMConfig":
     """
     try:
         import streamlit as st
-        base_url = (st.secrets.get("LLM_BASE_URL") or st.secrets.get("GROQ_BASE_URL")
-                    or st.secrets.get("OPENAI_BASE_URL"))
-        api_key = (st.secrets.get("LLM_API_KEY") or st.secrets.get("GROQ_API_KEY")
-                   or st.secrets.get("OPENAI_API_KEY") or st.secrets.get("API_KEY"))
-        model = st.secrets.get("LLM_MODEL") or st.secrets.get("GROQ_MODEL")
+
+        # Figure out which provider's key was actually configured so the
+        # base_url and model defaults match *that* provider. Previously this
+        # defaulted base_url to OpenAI even when a Groq key/model was set,
+        # which sent Groq-only model names (e.g. "llama-3.3-70b-versatile")
+        # to api.openai.com -> 404 model_not_found.
+        generic_key = st.secrets.get("LLM_API_KEY")
+        groq_key = st.secrets.get("GROQ_API_KEY")
+        openai_key = st.secrets.get("OPENAI_API_KEY") or st.secrets.get("API_KEY")
+
+        base_url = st.secrets.get("LLM_BASE_URL")
+        model = st.secrets.get("LLM_MODEL")
+
+        if generic_key:
+            api_key = generic_key
+            base_url = base_url or "https://api.groq.com/openai/v1"
+            model = model or "llama-3.3-70b-versatile"
+        elif groq_key:
+            api_key = groq_key
+            base_url = base_url or st.secrets.get("GROQ_BASE_URL") or "https://api.groq.com/openai/v1"
+            model = model or st.secrets.get("GROQ_MODEL") or "llama-3.3-70b-versatile"
+        elif openai_key:
+            api_key = openai_key
+            base_url = base_url or st.secrets.get("OPENAI_BASE_URL") or "https://api.openai.com/v1"
+            model = model or "gpt-4o-mini"
+        else:
+            api_key = None
+
         if api_key:
             return LLMConfig(
-                base_url=base_url or "https://api.openai.com/v1",
+                base_url=base_url,
                 api_key=api_key,
-                model=model or "gpt-4o-mini",
+                model=model,
                 temperature=default.temperature,
             )
     except Exception:

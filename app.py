@@ -114,11 +114,27 @@ def _show_llm_error(e: Exception) -> None:
     failure modes (bad key / unreachable endpoint) instead of a raw traceback.
     """
     try:
-        from openai import AuthenticationError, APIConnectionError
+        from openai import AuthenticationError, APIConnectionError, NotFoundError
     except Exception:
-        AuthenticationError = APIConnectionError = ()  # type: ignore
+        AuthenticationError = APIConnectionError = NotFoundError = ()  # type: ignore
 
-    if isinstance(e, AuthenticationError):
+    if isinstance(e, NotFoundError):
+        st.error(
+            "🚫 **The model `" + model + "` was not found at `" + base_url + "`.**\n\n"
+            "This almost always means the API key and the model belong to "
+            "different providers (e.g. a Groq key with an OpenAI model name, "
+            "or vice versa). Go to **Settings → Secrets** on share.streamlit.io "
+            "and make sure `LLM_BASE_URL` and `LLM_MODEL` both match the same "
+            "provider as `LLM_API_KEY`:\n\n"
+            "```toml\n# Groq\nLLM_API_KEY = \"gsk_...\"\n"
+            "LLM_BASE_URL = \"https://api.groq.com/openai/v1\"\n"
+            "LLM_MODEL = \"llama-3.3-70b-versatile\"\n\n"
+            "# OpenAI\nLLM_API_KEY = \"sk-...\"\n"
+            "LLM_BASE_URL = \"https://api.openai.com/v1\"\n"
+            "LLM_MODEL = \"gpt-4o-mini\"\n```\n\n"
+            "Then click **Reboot app**."
+        )
+    elif isinstance(e, AuthenticationError):
         st.error(
             "🔑 **The LLM provider rejected the API key** (401 Invalid API Key).\n\n"
             "Go to **Settings → Secrets** on share.streamlit.io and double-check:\n"
