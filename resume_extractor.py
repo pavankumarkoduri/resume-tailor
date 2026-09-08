@@ -54,6 +54,33 @@ Extract the structured facts exactly as instructed. Copy wording verbatim
 wherever possible; only split free text into the array fields above."""
 
 
+def _normalize_education(raw) -> list[dict]:
+    """Coerce the 'education' field into a list of {degree, institution,
+    dates} dicts, defensively handling models that don't follow the
+    requested schema exactly (e.g. returning plain strings like
+    "B.S. Computer Science, MIT (2020)" instead of a structured object).
+    This prevents a downstream AttributeError when app.py calls .get() on
+    each entry, regardless of which model produced the extraction.
+    """
+    if not raw:
+        return []
+    normalized = []
+    for entry in raw:
+        if isinstance(entry, dict):
+            normalized.append({
+                "degree": str(entry.get("degree", "") or ""),
+                "institution": str(entry.get("institution", "") or ""),
+                "dates": str(entry.get("dates", "") or ""),
+            })
+        elif isinstance(entry, str) and entry.strip():
+            # Model returned a plain string -- keep the text without losing
+            # it, rather than dropping the entry or crashing on .get().
+            normalized.append({"degree": entry.strip(), "institution": "", "dates": ""})
+    return normalized
+
+
 def extract_resume_structure(client: LLMClient, resume_text: str) -> dict:
     user_prompt = EXTRACT_USER_TEMPLATE.format(resume_text=resume_text.strip())
-    return client.chat_json(EXTRACT_SYSTEM, user_prompt, max_tokens=2500)
+    result = client.chat_json(EXTRACT_SYSTEM, user_prompt, max_tokens=2500)
+    result["education"] = _normalize_education(result.get("education"))
+    return result

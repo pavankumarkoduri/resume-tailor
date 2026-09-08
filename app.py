@@ -52,18 +52,27 @@ def _model_picker(label: str, base_url: str, api_key: str, default_model: str) -
     """
     # When the saved model isn't valid, prefer a well-known, general-purpose
     # chat model over whatever sorts first alphabetically -- provider model
-    # catalogs mix in specialty/regional/small models (e.g. Groq's
-    # "allam-2-7b", an Arabic-focused 7B model) that technically respond but
-    # are unreliable at strict structured JSON output for tasks like this.
+    # catalogs mix in specialty/regional/small/non-chat models that
+    # technically respond to a /models query but are unreliable (or entirely
+    # wrong-shaped) for this app's strict structured-JSON extraction/tailoring
+    # pipeline, e.g. Groq's:
+    #   - "allam-2-7b"        Arabic-focused 7B model, tiny 6K TPM quota
+    #   - "*whisper*"         audio transcription, not text chat
+    #   - "*guard*"           safety/moderation classifier, not general chat
+    #   - "*tts*"             text-to-speech
+    _BLOCKED_SUBSTRINGS = ["allam", "whisper", "guard", "tts", "moderation",
+                            "embed", "vision", "prompt-guard"]
     _PREFERRED_SUBSTRINGS = ["llama-3.3-70b", "llama-3.1-70b", "llama-3.1-8b",
-                              "mixtral", "gpt-4o", "gemma2-9b"]
+                              "gpt-oss", "mixtral", "gpt-4o", "gemma2-9b"]
 
     def _pick_best(models: list[str]) -> str:
+        usable = [m for m in models
+                  if not any(b in m.lower() for b in _BLOCKED_SUBSTRINGS)] or models
         for pref in _PREFERRED_SUBSTRINGS:
-            for m in models:
+            for m in usable:
                 if pref in m.lower():
                     return m
-        return models[0]
+        return usable[0]
 
     available = list_available_models(base_url, api_key)
     if available:
@@ -157,11 +166,21 @@ def _show_llm_error(e: Exception) -> None:
     failure modes (bad key / unreachable endpoint) instead of a raw traceback.
     """
     try:
-        from openai import AuthenticationError, APIConnectionError, NotFoundError
+        from openai import AuthenticationError, APIConnectionError, NotFoundError, RateLimitError
     except Exception:
-        AuthenticationError = APIConnectionError = NotFoundError = ()  # type: ignore
+        AuthenticationError = APIConnectionError = NotFoundError = RateLimitError = ()  # type: ignore
 
-    if isinstance(e, NotFoundError):
+    if isinstance(e, RateLimitError):
+        st.error(
+            "⏳ **Rate limit reached for model `" + model + "`.**\n\n"
+            "This model's per-minute token quota on the provider's free/shared "
+            "tier is too low for this app's requests. Wait a few seconds and "
+            "retry, or pick a different, higher-quota model from the "
+            "**Model** dropdown in the sidebar (e.g. a mainstream "
+            "`llama-3.1`/`llama-3.3` or `gpt-oss` model rather than a small "
+            "specialty one) — then click **Analyze Match** again."
+        )
+    elif isinstance(e, NotFoundError):
         st.error(
             "🚫 **The model `" + model + "` was not found at `" + base_url + "`.**\n\n"
             "This almost always means the API key and the model belong to "
