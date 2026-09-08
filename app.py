@@ -52,12 +52,18 @@ def _model_picker(label: str, base_url: str, api_key: str, default_model: str) -
     """
     available = list_available_models(base_url, api_key)
     if available:
-        options = available if default_model in available else [default_model] + available
-        idx = options.index(default_model) if default_model in options else 0
-        if default_model not in available:
+        if default_model in available:
+            options = available
+            idx = options.index(default_model)
+        else:
+            # Saved model isn't valid for this key -- show it at the top so
+            # the user can see what's configured, but default the actual
+            # selection to a real, working model instead of the broken one.
+            options = [default_model] + available
+            idx = 1
             st.sidebar.caption(
                 f"⚠️ `{default_model}` isn't in this key's available model list — "
-                "pick a valid one below."
+                "defaulted to a valid one below."
             )
         return st.sidebar.selectbox(label, options, index=idx)
     return st.sidebar.text_input(label, value=default_model)
