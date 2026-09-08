@@ -22,7 +22,7 @@ Run:
 import streamlit as st
 
 from resume_parser import extract_text
-from llm_client import LLMClient, LLMConfig, resolve_config_from_secrets, is_unreachable_local_config
+from llm_client import LLMClient, LLMConfig, resolve_config_from_secrets, is_unreachable_local_config, list_available_models
 from matcher import analyze_match, tailor_resume
 from resume_extractor import extract_resume_structure
 from resume_builder import merge_tailored_resume
@@ -42,12 +42,33 @@ for key in ("jd_text", "resume_text", "structured", "analysis", "tailored",
 _default_cfg = resolve_config_from_secrets(LLMConfig())
 _using_hosted_secret = _default_cfg.api_key not in ("", "ollama") and _default_cfg.base_url != "http://localhost:11434/v1"
 
+def _model_picker(label: str, base_url: str, api_key: str, default_model: str) -> str:
+    """Sidebar model selector backed by the provider's live /models list.
+
+    Falls back to a plain text input if the list can't be fetched (bad key,
+    unreachable endpoint, or a local backend without a /models route) so the
+    app never blocks on this call -- it's a convenience, not a hard
+    dependency.
+    """
+    available = list_available_models(base_url, api_key)
+    if available:
+        options = available if default_model in available else [default_model] + available
+        idx = options.index(default_model) if default_model in options else 0
+        if default_model not in available:
+            st.sidebar.caption(
+                f"⚠️ `{default_model}` isn't in this key's available model list — "
+                "pick a valid one below."
+            )
+        return st.sidebar.selectbox(label, options, index=idx)
+    return st.sidebar.text_input(label, value=default_model)
+
+
 st.sidebar.header("⚙️ LLM Settings")
 if _using_hosted_secret:
     st.sidebar.success("Using the server-configured LLM (no key needed).")
     base_url = _default_cfg.base_url
     api_key = _default_cfg.api_key
-    model = st.sidebar.text_input("Model", value=_default_cfg.model)
+    model = _model_picker("Model", base_url, api_key, _default_cfg.model)
 else:
     st.sidebar.caption(
         "Works with OpenAI, Azure OpenAI, or a fully local model via Ollama/LM Studio."
@@ -55,7 +76,7 @@ else:
     base_url = st.sidebar.text_input("Base URL", value=_default_cfg.base_url)
     api_key = st.sidebar.text_input("API Key", value=_default_cfg.api_key, type="password",
                                      help="For local Ollama/LM Studio, any placeholder value works.")
-    model = st.sidebar.text_input("Model", value=_default_cfg.model)
+    model = _model_picker("Model", base_url, api_key, _default_cfg.model)
 
     with st.sidebar.expander("ℹ️ Local model examples"):
         st.code("Ollama:     http://localhost:11434/v1  (api_key: 'ollama')\n"

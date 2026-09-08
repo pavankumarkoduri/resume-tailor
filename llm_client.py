@@ -90,6 +90,27 @@ def is_unreachable_local_config(config: "LLMConfig") -> bool:
     return ("localhost" in host) or ("127.0.0.1" in host) or ("0.0.0.0" in host)
 
 
+def list_available_models(base_url: str, api_key: str) -> list[str]:
+    """Return the model IDs this API key can actually use at base_url.
+
+    Provider model catalogs change over time (renamed/retired IDs), and a
+    key's account may not have access to every model a provider offers.
+    Querying the live /models endpoint avoids hardcoding a model name that
+    can silently 404 later -- instead the UI always offers a real, current
+    list to pick from. Returns [] on any failure (e.g. bad key, local
+    backend without a /models endpoint) so callers can fall back to a plain
+    text input.
+    """
+    try:
+        from openai import OpenAI
+        client = OpenAI(base_url=base_url, api_key=api_key or "not-needed")
+        resp = client.models.list()
+        ids = sorted(m.id for m in resp.data)
+        return ids
+    except Exception:
+        return []
+
+
 class LLMClient:
     def __init__(self, config: LLMConfig):
         self.config = config
